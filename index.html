@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>반응 속도 테스트</title>
+  <style>
+    :root { --bg:#0f1222; --card:#171a2b; --muted:#8a90a8; --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444; }
+    *{box-sizing:border-box} body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,
+    "Apple Color Emoji","Segoe UI Emoji";background:linear-gradient(120deg,#0e1020,#121536);} 
+    .wrap{min-height:100svh;display:grid;place-items:center;padding:24px}
+    .card{width:min(720px,92vw);background:var(--card);color:#e5e7eb;border:1px solid #23263a;border-radius:20px;box-shadow:0 10px 30px rgba(0,0,0,.35);overflow:hidden}
+    .head{padding:18px 22px;border-bottom:1px solid #23263a;display:flex;justify-content:space-between;align-items:center}
+    .title{font-size:18px;font-weight:700;letter-spacing:.2px}
+    .kbd{font:12px/1.2 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;color:var(--muted);}
+    .game{padding:18px;display:grid;gap:16px}
+    .pad{height:220px;border-radius:14px;border:1px dashed #2c3150;background:#111429;display:grid;place-items:center;user-select:none;cursor:pointer;transition:all .15s ease}
+    .pad.ready{background:#1a1f3f}
+    .pad.go{background:#0f2f1d;border-color:#1f7a43;box-shadow:inset 0 0 0 3px rgba(34,197,94,.15)}
+    .pad.too-soon{background:#3a1420;border-color:#7a1f3b}
+    .pad p{margin:0;text-align:center}
+    .big{font-size:22px;font-weight:700}
+    .hint{color:var(--muted);margin-top:6px}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+    .btn{padding:12px 16px;background:#0e1224;border:1px solid #2a2f4d;color:#e5e7eb;border-radius:12px;font-weight:700;cursor:pointer;transition:transform .05s ease, background .2s}
+    .btn:hover{background:#121735}
+    .btn:active{transform:translateY(1px)}
+    .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+    .stat{background:#0e1224;border:1px solid #2a2f4d;border-radius:12px;padding:12px;text-align:center}
+    .stat .label{display:block;color:var(--muted);font-size:12px;margin-bottom:6px}
+    .ms{font-size:20px;font-weight:800}
+    .ok{color:var(--ok)} .warn{color:var(--warn)} .bad{color:var(--bad)}
+    .foot{padding:14px 18px;border-top:1px solid #23263a;color:#9aa1b8;font-size:13px}
+    @media (max-width:520px){.row{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div class="head">
+        <div class="title">반응 속도 테스트</div>
+        <div class="kbd">Space: 시작/클릭</div>
+      </div>
+
+      <div class="game">
+        <div id="pad" class="pad ready" role="button" aria-live="polite">
+          <div>
+            <p class="big" id="status">시작을 누르고 기다리세요…</p>
+            <p class="hint" id="sub">초록색이 되면 바로 클릭!</p>
+          </div>
+        </div>
+
+        <div class="row">
+          <button id="startBtn" class="btn">시작하기</button>
+          <button id="resetBtn" class="btn" title="기록 초기화">기록 초기화</button>
+        </div>
+
+        <div class="stats">
+          <div class="stat"><span class="label">이번 기록</span><span id="last" class="ms">—</span></div>
+          <div class="stat"><span class="label">최고 기록</span><span id="best" class="ms">—</span></div>
+          <div class="stat"><span class="label">최근 5개 평균</span><span id="avg5" class="ms">—</span></div>
+          <div class="stat"><span class="label">시도 횟수</span><span id="tries" class="ms">0</span></div>
+        </div>
+      </div>
+
+      <div class="foot">팁: 너무 일찍 클릭하면 실패로 처리돼요. 180–250ms면 아주 좋아요! 🏁</div>
+    </div>
+  </div>
+
+  <script>
+    const pad = document.getElementById('pad');
+    const statusEl = document.getElementById('status');
+    const subEl = document.getElementById('sub');
+    const startBtn = document.getElementById('startBtn');
+    const resetBtn = document.getElementById('resetBtn');
+    const lastEl = document.getElementById('last');
+    const bestEl = document.getElementById('best');
+    const avg5El = document.getElementById('avg5');
+    const triesEl = document.getElementById('tries');
+
+    /**
+     * States: idle -> waiting (random delay) -> go (measure)
+     */
+    let state = 'idle';
+    let startTime = 0;
+    let timer = null;
+    let history = [];
+
+    function fmt(ms){
+      return ms ? `${ms.toFixed(0)} ms` : '—';
+    }
+
+    function updateStats(ms){
+      if(ms){
+        history.unshift(ms);
+        if(history.length>20) history.pop();
+      }
+      const best = history.length ? Math.min(...history) : null;
+      const avg5 = history.length ? history.slice(0,5).reduce((a,b)=>a+b,0)/Math.min(5,history.length) : null;
+      lastEl.textContent = fmt(ms||null);
+      bestEl.textContent = fmt(best);
+      avg5El.textContent = fmt(avg5);
+      triesEl.textContent = String(history.length);
+
+      // color feedback on last
+      lastEl.classList.remove('ok','warn','bad');
+      if(ms){
+        if(ms < 220) lastEl.classList.add('ok');
+        else if(ms < 300) lastEl.classList.add('warn');
+        else lastEl.classList.add('bad');
+      }
+    }
+
+    function toIdle(){
+      state = 'idle';
+      pad.className = 'pad ready';
+      statusEl.textContent = '시작을 누르고 기다리세요…';
+      subEl.textContent = '초록색이 되면 바로 클릭!';
+      clearTimeout(timer); timer = null;
+    }
+
+    function start(){
+      if(state !== 'idle') return; // ignore
+      state = 'waiting';
+      pad.className = 'pad ready';
+      statusEl.textContent = '대기…';
+      subEl.textContent = '절대로 누르지 말고 기다리세요.';
+      const delay = 1200 + Math.random()*2300; // 1.2s ~ 3.5s
+      timer = setTimeout(()=>{
+        state = 'go';
+        pad.className = 'pad go';
+        statusEl.textContent = '지금! 클릭!';
+        subEl.textContent = '빠르게 반응해 보세요.';
+        startTime = performance.now();
+      }, delay);
+    }
+
+    function tooSoon(){
+      state = 'idle';
+      clearTimeout(timer); timer = null;
+      pad.className = 'pad too-soon';
+      statusEl.textContent = '너무 빨라요!';
+      subEl.textContent = '초록색으로 바뀐 후 클릭해야 해요.';
+      updateStats();
+      setTimeout(()=>toIdle(), 800);
+    }
+
+    function clickPad(){
+      if(state === 'waiting') return tooSoon();
+      if(state !== 'go') return; // ignore
+      const ms = performance.now() - startTime;
+      pad.className = 'pad ready';
+      statusEl.textContent = `${ms.toFixed(0)} ms`; 
+      subEl.textContent = '스페이스나 시작 버튼으로 다시 시도!';
+      updateStats(ms);
+      state = 'idle';
+    }
+
+    // Handlers
+    startBtn.addEventListener('click', start);
+    resetBtn.addEventListener('click', ()=>{ history = []; updateStats(); toIdle(); });
+    pad.addEventListener('click', ()=>{ if(state==='idle') return; clickPad(); });
+
+    // Keyboard: Space to start/click
+    window.addEventListener('keydown', (e)=>{
+      if(e.code === 'Space'){
+        e.preventDefault();
+        if(state === 'idle') start();
+        else clickPad();
+      }
+    });
+
+    // Prevent accidental text selection while playing
+    window.addEventListener('pointerdown', ()=>{ document.body.style.userSelect = 'none'; });
+    window.addEventListener('pointerup', ()=>{ document.body.style.userSelect = ''; });
+
+    // Init
+    updateStats();
+  </script>
+</body>
+</html>
